@@ -29,6 +29,10 @@ type Move struct {
 	To     Position `json:"to"`
 }
 
+func (m Move) String() string {
+	return fmt.Sprintf("{Player: %s, From: %v, To: %v }", m.Player.Name, m.From, m.To)
+}
+
 func (m *Move) Equal(move Move) bool {
 	if m.From.Equal(move.From) && m.To.Equal(move.To) {
 		return true
@@ -99,7 +103,6 @@ func GenerateFilledMoves(width, height int) []Move {
 
 	for x := 0; x < width-1; x++ {
 		if x-width/2 <= 0 && x-width/2 >= -1 {
-			fmt.Println("-------------------->", x)
 			continue
 		}
 		moves = AddSquareWithDownLeftPos(moves, Position{X: x, Y: height - 2})
@@ -122,12 +125,12 @@ func GenerateFilledMoves(width, height int) []Move {
 }
 
 func AddSquareWithDownLeftPos(moves []Move, pos Position) []Move {
-	fmt.Printf("{ %d , %d } ----> { %d , %d }\n", pos.X, pos.Y, pos.X+1, pos.Y)
-	fmt.Printf("{ %d , %d } ----> { %d , %d }\n", pos.X, pos.Y, pos.X, pos.Y+1)
-	fmt.Printf("{ %d , %d } ----> { %d , %d }\n", pos.X, pos.Y, pos.X+1, pos.Y+1)
-	fmt.Printf("{ %d , %d } ----> { %d , %d }\n", pos.X, pos.Y+1, pos.X+1, pos.Y+1)
-	fmt.Printf("{ %d , %d } ----> { %d , %d }\n", pos.X, pos.Y+1, pos.X+1, pos.Y)
-	fmt.Printf("{ %d , %d } ----> { %d , %d }\n", pos.X+1, pos.Y+1, pos.X+1, pos.Y)
+	//fmt.Printf("{ %d , %d } ----> { %d , %d }\n", pos.X, pos.Y, pos.X+1, pos.Y)
+	//fmt.Printf("{ %d , %d } ----> { %d , %d }\n", pos.X, pos.Y, pos.X, pos.Y+1)
+	//fmt.Printf("{ %d , %d } ----> { %d , %d }\n", pos.X, pos.Y, pos.X+1, pos.Y+1)
+	//fmt.Printf("{ %d , %d } ----> { %d , %d }\n", pos.X, pos.Y+1, pos.X+1, pos.Y+1)
+	//fmt.Printf("{ %d , %d } ----> { %d , %d }\n", pos.X, pos.Y+1, pos.X+1, pos.Y)
+	//fmt.Printf("{ %d , %d } ----> { %d , %d }\n", pos.X+1, pos.Y+1, pos.X+1, pos.Y)
 	moves = append(moves,
 		Move{From: Position{X: pos.X, Y: pos.Y}, To: Position{X: pos.X + 1, Y: pos.Y}},
 		Move{From: Position{X: pos.X, Y: pos.Y}, To: Position{X: pos.X, Y: pos.Y + 1}},

@@ -2,7 +2,6 @@ package judge
 
 import (
 	"encoding/json"
-	"fmt"
 	"time"
 
 	client "github.com/Gimulator/client-go"
@@ -50,8 +49,6 @@ func (c *controller) setWorld(w World) error {
 		return err
 	}
 
-	fmt.Println("world turn =", w.Turn)
-
 	obj := client.Object{
 		Key: client.Key{
 			Type:      typeVerdict,
@@ -72,7 +69,6 @@ func (c *controller) setWorld(w World) error {
 }
 
 func (c *controller) setEndOfGame(winner string) error {
-	fmt.Println("end of game =", winner)
 	obj := client.Object{
 		Key: client.Key{
 			Type:      typeEndOfGame,

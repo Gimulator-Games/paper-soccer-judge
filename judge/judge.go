@@ -2,13 +2,13 @@ package judge
 
 import (
 	"encoding/json"
-	"math"
 	"os"
 	"sync"
 	"time"
 
 	client "github.com/Gimulator/client-go"
 	uuid "github.com/satori/go.uuid"
+	"github.com/sirupsen/logrus"
 )
 
 type moveResult string
@@ -33,29 +33,32 @@ type Judge struct {
 	token       string
 	ownerToName map[string]string
 	ch          chan client.Object
+	log         *logrus.Entry
 }
 
-func NewJudge() (Judge, error) {
+func NewJudge() (*Judge, error) {
 	ch := make(chan client.Object, 16)
 	c, err := newController(ch)
 	if err != nil {
-		return Judge{}, err
+		return nil, err
 	}
 
-	judge := Judge{
+	judge := &Judge{
 		Mutex:       &sync.Mutex{},
 		controller:  c,
 		ownerToName: make(map[string]string),
 		ch:          ch,
+		log:         logrus.WithField("entity", "judge"),
 	}
 
 	if err = judge.load(); err != nil {
-		return Judge{}, err
+		return nil, err
 	}
 	return judge, nil
 }
 
 func (j *Judge) load() error {
+	j.log.Info("starting to load game")
 	obj1, obj2 := j.receiptPlayers()
 
 	o1 := obj1.Owner
@@ -65,9 +68,16 @@ func (j *Judge) load() error {
 	o2 := obj2.Owner
 	p2 := obj2.Key.Name
 	j.ownerToName[o2] = p2
+	j.log.WithFields(logrus.Fields{
+		"player1": p1,
+		"player2": p2,
+		"owner1":  o1,
+		"owner2":  o2,
+	}).Info("receipted players")
 
 	w, err := NewWorld(p1, p2, width, height)
 	if err != nil {
+		j.log.WithError(err).Error("could not initiate world")
 		return err
 	}
 	j.world = w
@@ -75,6 +85,7 @@ func (j *Judge) load() error {
 	j.playground = genPlayground(w)
 
 	if err := j.setWorld(j.world); err != nil {
+		j.log.WithError(err).Fatal("could not set world")
 		return err
 	}
 
@@ -84,13 +95,18 @@ func (j *Judge) load() error {
 func (j *Judge) Listen() {
 	for {
 		obj := <-j.ch
+		log := j.log.WithField("object", obj)
+
+		log.Debug("receiving new object from gimulator")
 		if obj.Key.Type != typeAction || obj.Key.Name != j.ownerToName[obj.Owner] {
+			log.Error("invalid action type or name")
 			continue
 		}
 
 		var move Move
 		err := json.Unmarshal([]byte(obj.Value.(string)), &move)
 		if err != nil {
+			log.Error("could not unmarshal move in value of object")
 			continue
 		}
 
@@ -99,6 +115,8 @@ func (j *Judge) Listen() {
 }
 
 func (j *Judge) judge(move Move, name string) {
+	log := j.log.WithField("move", move)
+
 	j.Lock()
 	defer j.Unlock()
 
@@ -107,14 +125,18 @@ func (j *Judge) judge(move Move, name string) {
 	} else if name == j.world.Player2.Name {
 		move.Player = j.world.Player2
 	} else {
+		log.Fatal("invalid name for move")
 		return
 	}
 
 	if j.world.Turn != move.Player.Name {
+		log.Debug("invalid turn for move")
 		return
 	}
 
 	res := j.judgeMove(move)
+	log.WithField("result", res).Debug("result of move")
+
 	j.update(move, res)
 }
 
@@ -182,12 +204,12 @@ func (j *Judge) isPrizeMove(move Move) bool {
 func (j *Judge) isWinningMove(move Move) bool {
 	side := move.Player.Side
 	if side == topSide {
-		if move.To.Y == 0 && math.Abs(float64(move.To.X-j.world.Width/2)) < 2 {
+		if move.To.Y == 0 && move.To.X-j.world.Width/2 <= 1 && move.To.X-j.world.Width/2 >= -1 {
 			return true
 		}
 		return false
 	}
-	if move.To.Y == j.world.Height-1 && math.Abs(float64(move.To.X-j.world.Width/2)) < 2 {
+	if move.To.Y == j.world.Height-1 && move.To.X-j.world.Width/2 <= 1 && move.To.X-j.world.Width/2 >= -1 {
 		return true
 	}
 	return false
@@ -196,12 +218,12 @@ func (j *Judge) isWinningMove(move Move) bool {
 func (j *Judge) isLosingMove(move Move) bool {
 	side := move.Player.Side
 	if side == downSide {
-		if move.To.Y == 0 && math.Abs(float64(move.To.X-j.world.Width/2)) < 2 {
+		if move.To.Y == 0 && move.To.X-j.world.Width/2 <= 1 && move.To.X-j.world.Width/2 >= -1 {
 			return true
 		}
 		return false
 	}
-	if move.To.Y == j.world.Height-1 && math.Abs(float64(move.To.X-j.world.Width/2)) < 2 {
+	if move.To.Y == j.world.Height-1 && move.To.X-j.world.Width/2 <= 1 && move.To.X-j.world.Width/2 >= -1 {
 		return true
 	}
 	return false
@@ -209,6 +231,8 @@ func (j *Judge) isLosingMove(move Move) bool {
 
 func (j *Judge) update(move Move, result moveResult) {
 	j.updateToken()
+
+	turn := j.world.Turn
 	j.updateTurn(result)
 
 	if result != invalidMove {
@@ -218,11 +242,13 @@ func (j *Judge) update(move Move, result moveResult) {
 	}
 
 	j.setWorld(j.world)
+	j.log.Debug("set world")
 
 	if result == losingMove {
 		for owner, name := range j.ownerToName {
-			if name != j.world.Turn {
+			if name != turn {
 				j.setEndOfGame(owner)
+				j.log.WithField("winner", owner).Debug("set end of game")
 				os.Exit(0)
 			}
 		}
@@ -230,8 +256,9 @@ func (j *Judge) update(move Move, result moveResult) {
 
 	if result == winningMove {
 		for owner, name := range j.ownerToName {
-			if name == j.world.Turn {
+			if name == turn {
 				j.setEndOfGame(owner)
+				j.log.WithField("winner", owner).Debug("set end of game")
 				os.Exit(0)
 			}
 		}
