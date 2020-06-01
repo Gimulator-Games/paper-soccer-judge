@@ -67,17 +67,14 @@ func (c *controller) setWorld(w World) error {
 }
 
 func (c *controller) setEndOfGame(winner string) error {
-	obj := client.Object{
-		Key: client.Key{
-			Type:      typeEndOfGame,
-			Namespace: namespace,
-			Name:      "",
-		},
-		Value: winner,
+	key := client.Key{
+		Type:      typeEndOfGame,
+		Namespace: namespace,
+		Name:      "",
 	}
 
 	for {
-		err := c.Set(obj)
+		err := c.Set(key, winner)
 		if err == nil {
 			return nil
 		}
