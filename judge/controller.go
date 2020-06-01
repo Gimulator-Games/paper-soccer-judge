@@ -49,17 +49,15 @@ func (c *controller) setWorld(w World) error {
 		return err
 	}
 
-	obj := client.Object{
-		Key: client.Key{
-			Type:      typeVerdict,
-			Namespace: namespace,
-			Name:      worldName,
-		},
-		Value: string(val),
+	value := string(val)
+	key := client.Key{
+		Type:      typeVerdict,
+		Namespace: namespace,
+		Name:      worldName,
 	}
 
 	for {
-		err = c.Set(obj)
+		err = c.Set(key, value)
 		if err == nil {
 			return nil
 		}
