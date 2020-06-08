@@ -1,8 +1,8 @@
 package judge
 
 import (
+	"context"
 	"encoding/json"
-	"os"
 	"sync"
 	"time"
 
@@ -28,6 +28,7 @@ type Judge struct {
 	*sync.Mutex
 	controller
 
+	roomID      string
 	world       World
 	playground  [][]int
 	token       string
@@ -36,7 +37,7 @@ type Judge struct {
 	log         *logrus.Entry
 }
 
-func NewJudge() (*Judge, error) {
+func NewJudge(roomID string) (*Judge, error) {
 	ch := make(chan client.Object, 16)
 	c, err := newController(ch)
 	if err != nil {
@@ -46,6 +47,7 @@ func NewJudge() (*Judge, error) {
 	judge := &Judge{
 		Mutex:       &sync.Mutex{},
 		controller:  c,
+		roomID:      roomID,
 		ownerToName: make(map[string]string),
 		ch:          ch,
 		log:         logrus.WithField("entity", "judge"),
@@ -59,21 +61,12 @@ func NewJudge() (*Judge, error) {
 
 func (j *Judge) load() error {
 	j.log.Info("starting to load game")
-	obj1, obj2 := j.receiptPlayers()
 
-	o1 := obj1.Owner
-	p1 := obj1.Key.Name
-	j.ownerToName[o1] = p1
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute * 3)
+	defer cancel()
 
-	o2 := obj2.Owner
-	p2 := obj2.Key.Name
-	j.ownerToName[o2] = p2
-	j.log.WithFields(logrus.Fields{
-		"player1": p1,
-		"player2": p2,
-		"owner1":  o1,
-		"owner2":  o2,
-	}).Info("receipted players")
+	obj1, obj2 := j.receiptPlayers(ctx)
+	p1, p2 := j.handlePlayers(obj1, obj2)
 
 	w, err := NewWorld(p1, p2, width, height)
 	if err != nil {
@@ -90,6 +83,39 @@ func (j *Judge) load() error {
 	}
 
 	return nil
+}
+
+func (j *Judge) handlePlayers(obj1, obj2 *client.Object) (string, string) {
+	if obj1 == nil && obj2 == nil {
+		j.endFail()
+		return "", ""
+	}
+
+	if obj1 == nil && obj2 != nil {
+		j.setEndOfGame(obj2.Key.Name)
+		return "", ""
+	}
+
+	if obj1 != nil && obj2 == nil {
+		j.setEndOfGame(obj1.Key.Name)
+		return "", ""
+	}
+
+	o1 := obj1.Owner
+	p1 := obj1.Key.Name
+	j.ownerToName[o1] = p1
+
+	o2 := obj2.Owner
+	p2 := obj2.Key.Name
+	j.ownerToName[o2] = p2
+	j.log.WithFields(logrus.Fields{
+		"player1": p1,
+		"player2": p2,
+		"owner1":  o1,
+		"owner2":  o2,
+	}).Info("receipted players")
+
+	return p1, p2
 }
 
 func (j *Judge) Listen() {
@@ -247,9 +273,8 @@ func (j *Judge) update(move Move, result moveResult) {
 	if result == losingMove {
 		for owner, name := range j.ownerToName {
 			if name != turn {
-				j.setEndOfGame(owner)
 				j.log.WithField("winner", owner).Debug("set end of game")
-				os.Exit(0)
+				j.end(owner)
 			}
 		}
 	}
@@ -257,13 +282,57 @@ func (j *Judge) update(move Move, result moveResult) {
 	if result == winningMove {
 		for owner, name := range j.ownerToName {
 			if name == turn {
-				j.setEndOfGame(owner)
 				j.log.WithField("winner", owner).Debug("set end of game")
-				os.Exit(0)
+				j.end(owner)
 			}
 		}
 	}
 	go j.timer(j.token)
+}
+
+type result struct {
+	RoomID  string                 `json:"run_id"`
+	Status  string                 `json:"status"`
+	Message string                 `json:"message"`
+	Scores  map[string]map[int]int `json:"scores"`
+}
+
+func (j *Judge) end(winner string) {
+	scores := make(map[string]map[int]int)
+	scores[winner] = map[int]int{1: 1}
+	for owner := range j.ownerToName {
+		if owner != winner {
+			scores[owner] = map[int]int{1: 0}
+		}
+	}
+
+	res := result{
+		RoomID:  j.roomID,
+		Status:  "SUCCESS",
+		Message: "",
+		Scores:  scores,
+	}
+	bytes, err := json.Marshal(res)
+	if err != nil {
+		panic("can not marshal result of game")
+	}
+
+	j.setEndOfGame(string(bytes))
+}
+
+func (j *Judge) endFail() {
+	res := result{
+		RoomID:  j.roomID,
+		Status:  "FAIL",
+		Message: "There is no player",
+		Scores:  nil,
+	}
+	bytes, err := json.Marshal(res)
+	if err != nil {
+		panic("can not marshal result of game")
+	}
+
+	j.setEndOfGame(string(bytes))
 }
 
 func (j *Judge) updateToken() {

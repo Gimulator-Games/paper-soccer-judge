@@ -1,7 +1,10 @@
 package judge
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	"os"
 	"time"
 
 	client "github.com/Gimulator/client-go"
@@ -66,16 +69,19 @@ func (c *controller) setWorld(w World) error {
 	}
 }
 
-func (c *controller) setEndOfGame(winner string) error {
+func (c *controller) setEndOfGame(value string) error {
 	key := client.Key{
 		Type:      typeEndOfGame,
 		Namespace: namespace,
 		Name:      "",
 	}
 
+	fmt.Println(value)
+
 	for {
-		err := c.Set(key, winner)
+		err := c.Set(key, value)
 		if err == nil {
+			os.Exit(0)
 			return nil
 		}
 
@@ -83,21 +89,40 @@ func (c *controller) setEndOfGame(winner string) error {
 	}
 }
 
-func (c *controller) receiptPlayers() (client.Object, client.Object) {
+func (c *controller) receiptPlayers(ctx context.Context) (*client.Object, *client.Object) {
+	ticker := time.NewTicker(time.Second * 3)
+	done := ctx.Done()
 	for {
-		objs, err := c.Find(client.Key{
-			Name:      "",
-			Namespace: namespace,
-			Type:      typeRegister,
-		})
-		if err != nil {
-			continue
-		}
+		select {
+		case <-ticker.C:
+			objs, err := c.Find(client.Key{
+				Name:      "",
+				Namespace: namespace,
+				Type:      typeRegister,
+			})
+			if err != nil {
+				continue
+			}
 
-		if len(objs) == 2 {
-			return objs[0], objs[1]
+			if len(objs) == 2 {
+				return &objs[0], &objs[1]
+			}
+		case <-done:
+			objs, err := c.Find(client.Key{
+				Name:      "",
+				Namespace: namespace,
+				Type:      typeRegister,
+			})
+			if err != nil {
+				return nil, nil
+			}
+			if len(objs) == 0 {
+				return nil, nil
+			}
+			if len(objs) == 1 {
+				return &objs[0], nil
+			}
+			return &objs[0], &objs[1]
 		}
-
-		time.Sleep(time.Second * 3)
 	}
 }

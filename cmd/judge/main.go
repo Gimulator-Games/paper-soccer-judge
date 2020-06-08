@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"math/rand"
+	"os"
 	"path"
 	"runtime"
 	"time"
@@ -31,7 +32,12 @@ func init() {
 func main() {
 	rand.Seed(time.Now().UnixNano())
 
-	j, err := judge.NewJudge()
+	roomID := os.Getenv("ROOM_ID")
+	if roomID == "" {
+		panic("set 'ROOM_ID' environment variable to send result of game")
+	}
+
+	j, err := judge.NewJudge(roomID)
 	if err != nil {
 		panic(err)
 	}
